@@ -383,19 +383,7 @@
     }
   };
 
-  function toFV(val) {
-    if (val === null || val === undefined) return { nullValue: null };
-    if (typeof val === 'boolean')          return { booleanValue: val };
-    if (typeof val === 'number')           return { doubleValue: val };
-    if (typeof val === 'string')           return { stringValue: val };
-    if (Array.isArray(val))                return { arrayValue: { values: val.map(toFV) } };
-    if (typeof val === 'object') {
-      var f = {};
-      Object.keys(val).forEach(function(k) { f[k] = toFV(val[k]); });
-      return { mapValue: { fields: f } };
-    }
-    return { stringValue: String(val) };
-  }
+  // (toFV removido — só era usado pelo fbSave, que não existe mais no site público)
 
   function fromFV(fv) {
     if (!fv) return null;
@@ -445,8 +433,7 @@
       .then(function(doc) {
         if (!doc) {
           // First time — no data yet, just show a helpful message
-          setSyncStatus('Novo portfolio — adicione conteúdo e clique Save ↑', '#2D7A2D');
-          toast('✓ Pronto! Adicione projetos e salve.');
+          setSyncStatus('Portfolio ainda sem conteúdo', '#2D7A2D');
                 return;
         }
         var loaded = docToData(doc);
@@ -467,31 +454,9 @@
       .finally(function() { setFabLoading(false); });
   };
 
-  window.fbSave = function() {
-    setSyncStatus('Saving…', '#aaa');
-    setFabLoading(true);
-    var payload = Object.assign({}, APP.data, { updatedAt: new Date().toISOString() });
-    var fields = {};
-    Object.keys(payload).forEach(function(k) { fields[k] = toFV(payload[k]); });
-    fetch(FB.url(), {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fields: fields })
-    })
-    .then(function(r) {
-      if (!r.ok) return r.json().then(function(e) { throw new Error(e.error ? e.error.message : 'HTTP ' + r.status); });
-      return r.json();
-    })
-    .then(function() {
-      setSyncStatus('Saved · ' + new Date().toLocaleString('pt-BR'), '#2D7A2D');
-      toast('✓ Salvo no Firebase');
-    })
-    .catch(function(e) {
-      setSyncStatus('Save error: ' + e.message, '#C1440E');
-      toast('✗ ' + e.message);
-    })
-    .finally(function() { setFabLoading(false); });
-  };
+  // FIX: window.fbSave removido do site público — era uma função pronta de PATCH no
+  // Firestore exposta a qualquer visitante. A proteção de verdade são as RULES do
+  // Firestore (allow write: if false) — veja o aviso de segurança no <head>.
 
   function setSyncStatus() {}
 
@@ -595,7 +560,8 @@
     grid.innerHTML = '';
     var list = (APP.data.projects || []).slice().sort(function(a,b){ return (a.order||0)-(b.order||0); });
     list.forEach(function(p) {
-      if (!p.published) return;
+      // FIX: projetos NDA nunca aparecem no site público (o editor tem a área com senha; aqui não)
+      if (!p.published || p.nda) return;
       var card = document.createElement('div');
       card.className = 'project-card';
       card.innerHTML =
@@ -663,7 +629,7 @@
 
   function updateCounts() {
     var sets = [
-      { id:'proj-count',    items: (APP.data.projects||[]).filter(function(p){return p.published;}) },
+      { id:'proj-count',    items: (APP.data.projects||[]).filter(function(p){return p.published && !p.nda;}) },
       { id:'sketch-count',  items: APP.data.sketches||[] },
       { id:'blog-count',    items: (APP.data.blog||[]).filter(function(p){return p.published;}) }
     ];
@@ -681,6 +647,8 @@
     if (type === 'project') item = (APP.data.projects||[]).find(function(p){ return String(p.id) === String(id); });
     if (type === 'blog')    item = (APP.data.blog||[]).find(function(p){ return String(p.id) === String(id); });
     if (!item) return;
+    // FIX: sem isso, um deep link #project/ID abria projeto NDA ou rascunho no site público
+    if (item.nda || !item.published) return;
 
     if (!fromRoute) pushRoute((type === 'blog' ? 'note/' : 'project/') + id);
     setTitle(item.title || '');
